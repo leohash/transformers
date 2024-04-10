@@ -23,6 +23,9 @@ import warnings
 from typing import Dict, List, Tuple
 
 from packaging import version
+from tokenizers import pre_tokenizers, Tokenizer, decoders, processors, Regex
+from tokenizers.models import BPE
+
 from tokenizers import AddedToken, Regex, Tokenizer, decoders, normalizers, pre_tokenizers, processors
 from tokenizers.models import BPE, Unigram, WordPiece
 
@@ -1436,6 +1439,106 @@ class MarkupLMConverter(Converter):
 
         return tokenizer
 
+
+
+# Copied from transformers.models.gpt2.tokenization_gpt2.bytes_to_unicode
+def bytes_to_unicode():
+    """
+    Returns list of utf-8 byte and a mapping to unicode strings. We specifically avoids mapping to whitespace/control
+    characters the bpe code barfs on.
+
+    The reversible bpe codes work on unicode strings. This means you need a large # of unicode characters in your vocab
+    if you want to avoid UNKs. When you're at something like a 10B token dataset you end up needing around 5K for
+    decent coverage. This is a significant percentage of your normal, say, 32K bpe vocab. To avoid that, we want lookup
+    tables between utf-8 bytes and unicode strings.
+    """
+    bs = (
+        list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1)) + list(range(ord("®"), ord("ÿ") + 1))
+    )
+    cs = bs[:]
+    n = 0
+    for b in range(2**8):
+        if b not in bs:
+            bs.append(b)
+            cs.append(2**8 + n)
+            n += 1
+    cs = [chr(n) for n in cs]
+    return dict(zip(bs, cs))
+
+
+# Adapted from https://github.com/openai/tiktoken/issues/60#issuecomment-1499977960
+def _bpe(mergeable_ranks, token: bytes, max_rank=None) -> list[bytes]:
+    parts = [bytes([b]) for b in token]
+    while True:
+        min_idx = None
+        min_rank = None
+        for i, pair in enumerate(zip(parts[:-1], parts[1:])):
+            rank = mergeable_ranks.get(pair[0] + pair[1])
+            if rank is not None and (min_rank is None or rank < min_rank):
+                min_idx = i
+                min_rank = rank
+        if min_rank is None or (max_rank is not None and min_rank >= max_rank):
+            break
+        assert min_idx is not None
+        parts = parts[:min_idx] + [parts[min_idx] + parts[min_idx + 1]] + parts[min_idx + 2 :]
+    return parts
+
+
+class TikTokenConverter:
+    """
+    A general tiktoken converter.
+    """
+    def __init__(self, vocab_file=None, pattern= r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+""", add_prefix_space=False, *args):
+        super().__init__(*args)
+        self.vocab_file = vocab_file
+        self.pattern = pattern
+        self.add_prefix_space = add_prefix_space
+
+    def extract_vocab_merges_from_model(self, tiktoken_url: str):
+        try:
+            from tiktoken.load import load_tiktoken_bpe
+        except Exception as e:
+            raise ValueError(
+                "`tiktoken` is required to read a `tiktoken` file. Install it with "
+                "`pip install tiktoken`."
+            )
+
+
+        bpe_ranks = load_tiktoken_bpe(tiktoken_url)
+        byte_encoder = bytes_to_unicode()
+
+        def token_bytes_to_string(b):
+            return "".join([byte_encoder[ord(char)] for char in b.decode("latin-1")])
+
+        merges = []
+        vocab = {}
+        for token, rank in bpe_ranks.items():
+            vocab[token_bytes_to_string(token)] = rank
+            if len(token) == 1:
+                continue
+            merged = tuple(_bpe(bpe_ranks, token, max_rank=rank))
+            if len(merged) == 2:  # account for empty token
+                merges.append(tuple(map(token_bytes_to_string, merged)))
+        return vocab, merges
+
+    def tokenizer(self):
+        vocab_scores, merges = self.extract_vocab_merges_from_model(self.vocab_file)
+        tokenizer = Tokenizer(BPE(vocab_scores,merges,fuse_unk=False))
+        return tokenizer
+
+    def converted(self) -> Tokenizer:
+        tokenizer = self.tokenizer()
+        tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
+            [
+                pre_tokenizers.Split(Regex(self.pattern),behavior="isolated",invert=False),
+                pre_tokenizers.ByteLevel(add_prefix_space=self.add_prefix_space,use_regex=False),
+            ]
+        )
+
+        tokenizer.decoder = decoders.ByteLevel()
+        tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
+        return tokenizer
+    
 
 SLOW_TO_FAST_CONVERTERS = {
     "AlbertTokenizer": AlbertConverter,

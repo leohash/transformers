@@ -20,7 +20,8 @@ import warnings
 
 import torch
 
-from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizer
+from transformers import LlamaConfig, LlamaForCausalLM, LlamaTokenizer, PreTrainedTokenizerFast
+from transformers.convert_slow_tokenizer import TikTokenConverter
 
 
 try:
@@ -81,7 +82,7 @@ def write_json(text, path):
 
 
 def write_model(
-    model_path, input_base_path, model_size, tokenizer_path=None, safe_serialization=True, llama_version=1
+    model_path, input_base_path, model_size, tokenizer_path=None, safe_serialization=True, llama_version=1, vocab_size=None
 ):
     # for backward compatibility, before you needed the repo to be called `my_repo/model_size`
     if not os.path.isfile(os.path.join(input_base_path, "params.json")):
@@ -109,17 +110,11 @@ def write_model(
             max_position_embeddings = 2048
         elif llama_version == 2:
             max_position_embeddings = 4096
-        else:
-            raise NotImplementedError(
-                f"Version {llama_version} of llama is not supported yet. "
-                "Current supported versions of llama are [1, 2]."
-            )
+        elif llama_version == 2:
+            max_position_embeddings = 4096
 
-    tokenizer_class = LlamaTokenizer if LlamaTokenizerFast is None else LlamaTokenizerFast
-    if tokenizer_path is not None:
-        tokenizer = tokenizer_class(tokenizer_path)
-        tokenizer.save_pretrained(model_path)
-    vocab_size = tokenizer.vocab_size if tokenizer_path is not None else 32000
+
+    vocab_size = vocab_size if vocab_size is not None else 32000
 
     if params.get("n_kv_heads", None) is not None:
         num_key_value_heads = params["n_kv_heads"]  # for GQA / MQA
@@ -288,13 +283,52 @@ def write_model(
     shutil.rmtree(tmp_model_path)
 
 
-def write_tokenizer(tokenizer_path, input_tokenizer_path):
+class Llama3Converter(TikTokenConverter):
+    def __init__(self, vocab_file, num_reserved_special_tokens=256, **kwargs):
+        super().__init__(vocab_file, **kwargs)
+        tokenizer = self.converted()
+    
+        chat_template = (
+            "{% set loop_messages = messages %}"
+            "{% for message in loop_messages %}"
+                "{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'].strip() + '<|eot_id|>' %}"
+                "{% if loop.index0 == 0 %}"
+                    "{% set content = bos_token + content %}"
+                "{% endif %}"
+                "{{ content }}"
+            "{% endfor %}"
+            "{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
+        )
+        num_reserved_special_tokens = 256
+        special_tokens = [
+            "<|begin_of_text|>",
+            "<|end_of_text|>",
+            "<|reserved_special_token_0|>",
+            "<|reserved_special_token_1|>",
+            "<|reserved_special_token_2|>",
+            "<|reserved_special_token_3|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>",
+            "<|reserved_special_token_4|>",
+            "<|eot_id|>",  # end of turn
+        ] + [
+            f"<|reserved_special_token_{i}|>"
+            for i in range(5, num_reserved_special_tokens - 5)
+        ]
+        tokenizer.add_special_tokens(special_tokens)
+        # TODO get the bos and eos from the tiktoken object?
+        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, bos_token="<|begin_of_text|>", eos_token = "<|end_of_text|>", chat_template=chat_template)
+
+def write_tokenizer(tokenizer_path, input_tokenizer_path, llama_version=2):
     # Initialize the tokenizer based on the `spm` model
     tokenizer_class = LlamaTokenizer if LlamaTokenizerFast is None else LlamaTokenizerFast
+    if llama_version==3:
+        tokenizer = Llama3Converter(input_tokenizer_path).tokenizer
+    else:
+        tokenizer = tokenizer_class(input_tokenizer_path)
     print(f"Saving a {tokenizer_class.__name__} to {tokenizer_path}.")
-    tokenizer = tokenizer_class(input_tokenizer_path)
     tokenizer.save_pretrained(tokenizer_path)
-
+    return tokenizer
 
 def main():
     parser = argparse.ArgumentParser()
@@ -315,13 +349,14 @@ def main():
     # Different Llama versions used different default values for max_position_embeddings, hence the need to be able to specify which version is being used.
     parser.add_argument(
         "--llama_version",
-        choices=[1, 2],
+        choices=[1, 2, 3],
         default=1,
         type=int,
         help="Version of the Llama model to convert. Currently supports Llama1 and Llama2. Controls the context size",
     )
     args = parser.parse_args()
     spm_path = os.path.join(args.input_dir, "tokenizer.model")
+    vocab_size = write_tokenizer(args.output_dir, spm_path,llama_version=args.llama_version).vocab_size
     if args.model_size != "tokenizer_only":
         write_model(
             model_path=args.output_dir,
@@ -330,9 +365,9 @@ def main():
             safe_serialization=args.safe_serialization,
             tokenizer_path=spm_path,
             llama_version=args.llama_version,
+            vocab_size=vocab_size
         )
-    else:
-        write_tokenizer(args.output_dir, spm_path)
+
 
 
 if __name__ == "__main__":
