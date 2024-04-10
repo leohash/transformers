@@ -110,12 +110,12 @@ def write_model(
             max_position_embeddings = 2048
         elif llama_version == 2:
             max_position_embeddings = 4096
-        elif llama_version == 2:
+        elif llama_version == 3:
             max_position_embeddings = 4096
 
 
     vocab_size = vocab_size if vocab_size is not None else 32000
-
+    print(params)
     if params.get("n_kv_heads", None) is not None:
         num_key_value_heads = params["n_kv_heads"]  # for GQA / MQA
         num_local_key_value_heads = n_heads_per_shard // num_key_value_heads
@@ -126,7 +126,7 @@ def write_model(
         key_value_dim = dim
 
     # permute for sliced rotary
-    def permute(w, n_heads=n_heads, dim1=dim, dim2=dim):
+    def permute(w, n_heads, dim1=dim, dim2=dim):
         return w.view(n_heads, dim1 // n_heads // 2, 2, dim2).transpose(1, 2).reshape(dim1, dim2)
 
     print(f"Fetching all parameters from the checkpoint at {input_base_path}.")
@@ -134,7 +134,7 @@ def write_model(
     if num_shards == 1:
         # Not sharded
         # (The sharded implementation would also work, but this is simpler.)
-        loaded = torch.load(os.path.join(input_base_path, "consolidated.00.pth"), map_location="cpu")
+        loaded = torch.load(os.path.join(input_base_path, "consolidated.0.pth"), map_location="cpu")
     else:
         # Sharded
         loaded = [
@@ -149,10 +149,10 @@ def write_model(
             # Unsharded
             state_dict = {
                 f"model.layers.{layer_i}.self_attn.q_proj.weight": permute(
-                    loaded[f"layers.{layer_i}.attention.wq.weight"]
+                    loaded[f"layers.{layer_i}.attention.wq.weight"], n_heads=n_heads
                 ),
                 f"model.layers.{layer_i}.self_attn.k_proj.weight": permute(
-                    loaded[f"layers.{layer_i}.attention.wk.weight"]
+                    loaded[f"layers.{layer_i}.attention.wk.weight"], n_heads=num_local_key_value_heads, dim1=dim // num_local_key_value_heads
                 ),
                 f"model.layers.{layer_i}.self_attn.v_proj.weight": loaded[f"layers.{layer_i}.attention.wv.weight"],
                 f"model.layers.{layer_i}.self_attn.o_proj.weight": loaded[f"layers.{layer_i}.attention.wo.weight"],
