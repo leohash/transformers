@@ -356,7 +356,7 @@ def main():
     )
     args = parser.parse_args()
     spm_path = os.path.join(args.input_dir, "tokenizer.model")
-    vocab_size = write_tokenizer(args.output_dir, spm_path,llama_version=args.llama_version).vocab_size
+    vocab_size = len(write_tokenizer(args.output_dir, spm_path,llama_version=args.llama_version))
     if args.model_size != "tokenizer_only":
         write_model(
             model_path=args.output_dir,
