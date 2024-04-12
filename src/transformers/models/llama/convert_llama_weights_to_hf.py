@@ -183,7 +183,8 @@ def write_model(
                         for i in range(num_shards)
                     ],
                     dim=0,
-                ).reshape(dim, dim)
+                ).reshape(dim, dim),
+                n_heads=n_heads
             )
             state_dict[f"model.layers.{layer_i}.self_attn.k_proj.weight"] = permute(
                 torch.cat(
