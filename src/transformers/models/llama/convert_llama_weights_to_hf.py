@@ -138,7 +138,7 @@ def write_model(
     else:
         # Sharded
         loaded = [
-            torch.load(os.path.join(input_base_path, f"consolidated.{i:02d}.pth"), map_location="cpu")
+            torch.load(os.path.join(input_base_path, f"consolidated.{i:01d}.pth"), map_location="cpu")
             for i in range(num_shards)
         ]
     param_count = 0
