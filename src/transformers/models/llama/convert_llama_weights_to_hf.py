@@ -238,10 +238,11 @@ def write_model(
             "lm_head.weight": loaded["output.weight"],
         }
     else:
+        concat_dim = 0 if llama_version == 3 else 1
         state_dict = {
             "model.norm.weight": loaded[0]["norm.weight"],
             "model.embed_tokens.weight": torch.cat(
-                [loaded[i]["tok_embeddings.weight"] for i in range(num_shards)], dim=1
+                [loaded[i]["tok_embeddings.weight"] for i in range(num_shards)], dim=concat_dim
             ),
             "lm_head.weight": torch.cat([loaded[i]["output.weight"] for i in range(num_shards)], dim=0),
         }
