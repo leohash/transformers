@@ -161,7 +161,11 @@ def write_model(
                     n_heads=num_key_value_heads,
                     dim1=dim // num_local_key_value_heads,
                 ),
-                f"model.layers.{layer_i}.self_attn.v_proj.weight": loaded[f"layers.{layer_i}.attention.wv.weight"],
+                f"model.layers.{layer_i}.self_attn.v_proj.weight": permute( 
+                    loaded[f"layers.{layer_i}.attention.wv.weight"],
+                    n_heads=num_key_value_heads,
+                    dim1=dim // num_local_key_value_heads,
+                ),
                 f"model.layers.{layer_i}.self_attn.o_proj.weight": loaded[f"layers.{layer_i}.attention.wo.weight"],
                 f"model.layers.{layer_i}.mlp.gate_proj.weight": loaded[f"layers.{layer_i}.feed_forward.w1.weight"],
                 f"model.layers.{layer_i}.mlp.down_proj.weight": loaded[f"layers.{layer_i}.feed_forward.w2.weight"],
