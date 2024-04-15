@@ -143,7 +143,7 @@ def write_model(
     else:
         # Sharded
         loaded = [
-            torch.load(os.path.join(input_base_path, f"consolidated.{i:02d}.pth"), map_location="cpu")
+            torch.load(os.path.join(input_base_path, f"consolidated.{i:01d}.pth"), map_location="cpu")
             for i in range(num_shards)
         ]
     param_count = 0
@@ -190,7 +190,8 @@ def write_model(
                         for i in range(num_shards)
                     ],
                     dim=0,
-                ).reshape(dim, dim)
+                ).reshape(dim, dim),
+                n_heads=n_heads
             )
             state_dict[f"model.layers.{layer_i}.self_attn.k_proj.weight"] = permute(
                 torch.cat(
@@ -244,10 +245,11 @@ def write_model(
             "lm_head.weight": loaded["output.weight"],
         }
     else:
+        concat_dim = 0 if llama_version == 3 else 1
         state_dict = {
             "model.norm.weight": loaded[0]["norm.weight"],
             "model.embed_tokens.weight": torch.cat(
-                [loaded[i]["tok_embeddings.weight"] for i in range(num_shards)], dim=1
+                [loaded[i]["tok_embeddings.weight"] for i in range(num_shards)], dim=concat_dim
             ),
             "lm_head.weight": torch.cat([loaded[i]["output.weight"] for i in range(num_shards)], dim=0),
         }
