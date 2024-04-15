@@ -82,7 +82,13 @@ def write_json(text, path):
 
 
 def write_model(
-    model_path, input_base_path, model_size, tokenizer_path=None, safe_serialization=True, llama_version=1, vocab_size=None
+    model_path,
+    input_base_path,
+    model_size,
+    tokenizer_path=None,
+    safe_serialization=True,
+    llama_version=1,
+    vocab_size=None,
 ):
     # for backward compatibility, before you needed the repo to be called `my_repo/model_size`
     if not os.path.isfile(os.path.join(input_base_path, "params.json")):
@@ -112,7 +118,6 @@ def write_model(
             max_position_embeddings = 4096
         elif llama_version == 3:
             max_position_embeddings = 4096
-
 
     vocab_size = vocab_size if vocab_size is not None else 32000
     print(params)
@@ -152,7 +157,9 @@ def write_model(
                     loaded[f"layers.{layer_i}.attention.wq.weight"], n_heads=n_heads
                 ),
                 f"model.layers.{layer_i}.self_attn.k_proj.weight": permute(
-                    loaded[f"layers.{layer_i}.attention.wk.weight"], n_heads=num_local_key_value_heads, dim1=dim // num_local_key_value_heads
+                    loaded[f"layers.{layer_i}.attention.wk.weight"],
+                    n_heads=num_local_key_value_heads,
+                    dim1=dim // num_local_key_value_heads,
                 ),
                 f"model.layers.{layer_i}.self_attn.v_proj.weight": loaded[f"layers.{layer_i}.attention.wv.weight"],
                 f"model.layers.{layer_i}.self_attn.o_proj.weight": loaded[f"layers.{layer_i}.attention.wo.weight"],
@@ -287,15 +294,15 @@ class Llama3Converter(TikTokenConverter):
     def __init__(self, vocab_file, num_reserved_special_tokens=256, **kwargs):
         super().__init__(vocab_file, **kwargs)
         tokenizer = self.converted()
-    
+
         chat_template = (
             "{% set loop_messages = messages %}"
             "{% for message in loop_messages %}"
-                "{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'].strip() + '<|eot_id|>' %}"
-                "{% if loop.index0 == 0 %}"
-                    "{% set content = bos_token + content %}"
-                "{% endif %}"
-                "{{ content }}"
+            "{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'].strip() + '<|eot_id|>' %}"
+            "{% if loop.index0 == 0 %}"
+            "{% set content = bos_token + content %}"
+            "{% endif %}"
+            "{{ content }}"
             "{% endfor %}"
             "{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}"
         )
@@ -311,24 +318,28 @@ class Llama3Converter(TikTokenConverter):
             "<|end_header_id|>",
             "<|reserved_special_token_4|>",
             "<|eot_id|>",  # end of turn
-        ] + [
-            f"<|reserved_special_token_{i}|>"
-            for i in range(5, num_reserved_special_tokens - 5)
-        ]
+        ] + [f"<|reserved_special_token_{i}|>" for i in range(5, num_reserved_special_tokens - 5)]
         tokenizer.add_special_tokens(special_tokens)
         # TODO get the bos and eos from the tiktoken object?
-        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, bos_token="<|begin_of_text|>", eos_token = "<|end_of_text|>", chat_template=chat_template)
+        self.tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=tokenizer,
+            bos_token="<|begin_of_text|>",
+            eos_token="<|end_of_text|>",
+            chat_template=chat_template,
+        )
+
 
 def write_tokenizer(tokenizer_path, input_tokenizer_path, llama_version=2):
     # Initialize the tokenizer based on the `spm` model
     tokenizer_class = LlamaTokenizer if LlamaTokenizerFast is None else LlamaTokenizerFast
-    if llama_version==3:
+    if llama_version == 3:
         tokenizer = Llama3Converter(input_tokenizer_path).tokenizer
     else:
         tokenizer = tokenizer_class(input_tokenizer_path)
     print(f"Saving a {tokenizer_class.__name__} to {tokenizer_path}.")
     tokenizer.save_pretrained(tokenizer_path)
     return tokenizer
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -356,7 +367,7 @@ def main():
     )
     args = parser.parse_args()
     spm_path = os.path.join(args.input_dir, "tokenizer.model")
-    vocab_size = len(write_tokenizer(args.output_dir, spm_path,llama_version=args.llama_version))
+    vocab_size = len(write_tokenizer(args.output_dir, spm_path, llama_version=args.llama_version))
     if args.model_size != "tokenizer_only":
         write_model(
             model_path=args.output_dir,
@@ -365,9 +376,8 @@ def main():
             safe_serialization=args.safe_serialization,
             tokenizer_path=spm_path,
             llama_version=args.llama_version,
-            vocab_size=vocab_size
+            vocab_size=vocab_size,
         )
-
 
 
 if __name__ == "__main__":

@@ -23,9 +23,6 @@ import warnings
 from typing import Dict, List, Tuple
 
 from packaging import version
-from tokenizers import pre_tokenizers, Tokenizer, decoders, processors, Regex
-from tokenizers.models import BPE
-
 from tokenizers import AddedToken, Regex, Tokenizer, decoders, normalizers, pre_tokenizers, processors
 from tokenizers.models import BPE, Unigram, WordPiece
 
@@ -1440,7 +1437,6 @@ class MarkupLMConverter(Converter):
         return tokenizer
 
 
-
 # Copied from transformers.models.gpt2.tokenization_gpt2.bytes_to_unicode
 def bytes_to_unicode():
     """
@@ -1466,29 +1462,18 @@ def bytes_to_unicode():
     return dict(zip(bs, cs))
 
 
-# Adapted from https://github.com/openai/tiktoken/issues/60#issuecomment-1499977960
-def _bpe(mergeable_ranks, token: bytes, max_rank=None) -> list[bytes]:
-    parts = [bytes([b]) for b in token]
-    while True:
-        min_idx = None
-        min_rank = None
-        for i, pair in enumerate(zip(parts[:-1], parts[1:])):
-            rank = mergeable_ranks.get(pair[0] + pair[1])
-            if rank is not None and (min_rank is None or rank < min_rank):
-                min_idx = i
-                min_rank = rank
-        if min_rank is None or (max_rank is not None and min_rank >= max_rank):
-            break
-        assert min_idx is not None
-        parts = parts[:min_idx] + [parts[min_idx] + parts[min_idx + 1]] + parts[min_idx + 2 :]
-    return parts
-
-
 class TikTokenConverter:
     """
     A general tiktoken converter.
     """
-    def __init__(self, vocab_file=None, pattern= r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+""", add_prefix_space=False, *args):
+
+    def __init__(
+        self,
+        vocab_file=None,
+        pattern=r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+""",
+        add_prefix_space=False,
+        *args,
+    ):
         super().__init__(*args)
         self.vocab_file = vocab_file
         self.pattern = pattern
@@ -1497,12 +1482,10 @@ class TikTokenConverter:
     def extract_vocab_merges_from_model(self, tiktoken_url: str):
         try:
             from tiktoken.load import load_tiktoken_bpe
-        except Exception as e:
+        except Exception:
             raise ValueError(
-                "`tiktoken` is required to read a `tiktoken` file. Install it with "
-                "`pip install tiktoken`."
+                "`tiktoken` is required to read a `tiktoken` file. Install it with " "`pip install tiktoken`."
             )
-
 
         bpe_ranks = load_tiktoken_bpe(tiktoken_url)
         byte_encoder = bytes_to_unicode()
@@ -1516,29 +1499,37 @@ class TikTokenConverter:
             vocab[token_bytes_to_string(token)] = rank
             if len(token) == 1:
                 continue
-            merged = tuple(_bpe(bpe_ranks, token, max_rank=rank))
-            if len(merged) == 2:  # account for empty token
-                merges.append(tuple(map(token_bytes_to_string, merged)))
+            local = []
+            for index in range(1, len(token)):
+                piece_l, piece_r = token[:index], token[index:]
+                if piece_l in bpe_ranks and piece_r in bpe_ranks and (piece_l + piece_r) in bpe_ranks:
+                    local.append((piece_l, piece_r, rank))
+            local = sorted(local, key=lambda x: (bpe_ranks[x[0]], bpe_ranks[x[1]]), reverse=False)
+            merges.extend(local)
+        merges = sorted(merges, key=lambda val: val[2], reverse=False)
+        merges = [(token_bytes_to_string(val[0]), token_bytes_to_string(val[1])) for val in merges]
         return vocab, merges
 
     def tokenizer(self):
         vocab_scores, merges = self.extract_vocab_merges_from_model(self.vocab_file)
-        tokenizer = Tokenizer(BPE(vocab_scores,merges,fuse_unk=False))
+        tokenizer = Tokenizer(BPE(vocab_scores, merges, fuse_unk=False))
+        if hasattr(tokenizer.model, "ignore_merges"):  # needs the transformeres release
+            tokenizer.model.ignore_merges = True
         return tokenizer
 
     def converted(self) -> Tokenizer:
         tokenizer = self.tokenizer()
         tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
             [
-                pre_tokenizers.Split(Regex(self.pattern),behavior="isolated",invert=False),
-                pre_tokenizers.ByteLevel(add_prefix_space=self.add_prefix_space,use_regex=False),
+                pre_tokenizers.Split(Regex(self.pattern), behavior="isolated", invert=False),
+                pre_tokenizers.ByteLevel(add_prefix_space=self.add_prefix_space, use_regex=False),
             ]
         )
 
         tokenizer.decoder = decoders.ByteLevel()
         tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
         return tokenizer
-    
+
 
 SLOW_TO_FAST_CONVERTERS = {
     "AlbertTokenizer": AlbertConverter,
