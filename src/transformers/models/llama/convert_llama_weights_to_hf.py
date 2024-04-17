@@ -330,6 +330,7 @@ class Llama3Converter(TikTokenConverter):
             bos_token="<|begin_of_text|>",
             eos_token="<|end_of_text|>",
             chat_template=chat_template,
+            model_input_names = ["input_ids", "attention_mask"]
         )
 
 
