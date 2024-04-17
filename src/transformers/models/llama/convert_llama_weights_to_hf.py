@@ -110,7 +110,7 @@ def write_model(
     dims_per_head = dim // n_heads
     base = params.get("rope_theta", 10000.0)
     inv_freq = 1.0 / (base ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
-    if base > 10000.0:
+    if base > 10000.0 and llama_version != 3:
         max_position_embeddings = 16384
     else:
         # Depending on the Llama version, the default max_position_embeddings has different values.
@@ -119,7 +119,7 @@ def write_model(
         elif llama_version == 2:
             max_position_embeddings = 4096
         elif llama_version == 3:
-            max_position_embeddings = 4096
+            max_position_embeddings = 8192
 
     vocab_size = vocab_size if vocab_size is not None else 32000
     print(params)
