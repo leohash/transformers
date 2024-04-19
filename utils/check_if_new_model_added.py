@@ -80,8 +80,8 @@ def get_new_python_files() -> List[str]:
     print(f"Current head is at {repo.head.commit}")
 
     branching_commits = repo.merge_base(main, repo.head)
-    # for commit in branching_commits:
-    #     print(f"Branching commit: {commit}")
+    for commit in branching_commits:
+        print(f"Branching commit: {commit}")
     return get_new_files(repo.head.commit, branching_commits)
 
 

@@ -34,8 +34,6 @@ jobs:
           id: check_new_model
           run: |
             python -m pip install GitPython==3.1.32
-            echo "$(python utils/check_if_new_model_added.py)"
-            echo "$(python utils/check_if_new_model_added.py | tail -n 1)"
             echo "new_model=$(python utils/check_if_new_model_added.py | tail -n 1)" >> $GITHUB_OUTPUT
 
   run_test:
