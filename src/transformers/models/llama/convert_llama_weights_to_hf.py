@@ -163,7 +163,7 @@ def write_model(
                     n_heads=num_key_value_heads,
                     dim1=dim // num_local_key_value_heads,
                 ),
-                f"model.layers.{layer_i}.self_attn.v_proj.weight":loaded[f"layers.{layer_i}.attention.wv.weight"],
+                f"model.layers.{layer_i}.self_attn.v_proj.weight": loaded[f"layers.{layer_i}.attention.wv.weight"],
                 f"model.layers.{layer_i}.self_attn.o_proj.weight": loaded[f"layers.{layer_i}.attention.wo.weight"],
                 f"model.layers.{layer_i}.mlp.gate_proj.weight": loaded[f"layers.{layer_i}.feed_forward.w1.weight"],
                 f"model.layers.{layer_i}.mlp.down_proj.weight": loaded[f"layers.{layer_i}.feed_forward.w2.weight"],
@@ -193,7 +193,7 @@ def write_model(
                     ],
                     dim=0,
                 ).reshape(dim, dim),
-                n_heads=n_heads
+                n_heads=n_heads,
             )
             state_dict[f"model.layers.{layer_i}.self_attn.k_proj.weight"] = permute(
                 torch.cat(
@@ -332,7 +332,7 @@ class Llama3Converter(TikTokenConverter):
             bos_token="<|begin_of_text|>",
             eos_token="<|end_of_text|>",
             chat_template=chat_template,
-            model_input_names = ["input_ids", "attention_mask"]
+            model_input_names=["input_ids", "attention_mask"],
         )
 
 
