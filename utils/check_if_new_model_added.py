@@ -89,7 +89,7 @@ if __name__ == "__main__":
     new_files = get_new_python_files()
     reg = re.compile(r"src/transformers/(models/.*)/modeling_.*\.py")
 
-    new_model = " "
+    new_model = ""
     for x in new_files:
         find_new_model = reg.findall(x)
         if len(find_new_model) > 0:
