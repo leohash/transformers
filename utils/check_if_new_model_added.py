@@ -96,4 +96,5 @@ if __name__ == "__main__":
             new_model = find_new_model[0]
         # It's unlikely we have 2 new modeling files in a pull request.
         break
+    new_model = "models/bert"
     print(new_model)
