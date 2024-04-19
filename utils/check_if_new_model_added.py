@@ -76,8 +76,8 @@ def get_new_python_files() -> List[str]:
     except:
         main = repo.remotes.origin.refs.main
 
-    # print(f"main is at {main.commit}")
-    # print(f"Current head is at {repo.head.commit}")
+    print(f"main is at {main.commit}")
+    print(f"Current head is at {repo.head.commit}")
 
     branching_commits = repo.merge_base(main, repo.head)
     # for commit in branching_commits:
